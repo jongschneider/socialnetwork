@@ -2,7 +2,7 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -31,14 +31,15 @@ func main() {
 	// Router
 	mux := chi.NewMux()
 	mux.Use(middleware.Recoverer)
-	mux.Route("/", func(api chi.Router) {
+	mux.Route("/api", func(api chi.Router) {
 		jsonRequired := middleware.AllowContentType("application/json")
 		api.With(jsonRequired).Post("/login", login)
+		api.With(jsonRequired).Post("/users", createUser)
 	})
 
 	// Server
-	port := env("PORT", "80")
-	fmt.Printf("Now serving on port: %s", port)
+	port := env("PORT", "8080")
+	log.Printf("Now serving on port: %s\n", port)
 	log.Fatalln(http.ListenAndServe(":"+port, mux))
 
 }
@@ -52,4 +53,30 @@ func env(key, fallbackValue string) string {
 	return fallbackValue
 }
 
-// this is a test
+func respondError(w http.ResponseWriter, err error) {
+	log.Println(err)
+	http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+
+func respondJSON(w http.ResponseWriter, v interface{}, code int) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	w.Write(b)
+}
+
+// Middleware -
+type Middleware func(http.Handler) http.Handler
+
+func pipe(middlewares ...Middleware) Middleware {
+	return func(next http.Handler) http.Handler {
+		for i := len(middlewares) - 1; i >= 0; i-- {
+			next = middlewares[i](next)
+		}
+		return next
+	}
+}
