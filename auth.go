@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -33,7 +34,7 @@ const (
 var jwtKey = env("JWT_KEY", "secret")
 
 func jwtKeyfunc(*jwt.Token) (interface{}, error) {
-	return jwtKey, nil
+	return []byte(jwtKey), nil
 }
 
 // Insecure login
@@ -64,6 +65,7 @@ func login(w http.ResponseWriter, r *http.Request) {
 			http.StatusNotFound)
 		return
 	} else if err != nil {
+		log.Println("it happened here")
 		respondError(w, err)
 		return
 	}
@@ -72,7 +74,7 @@ func login(w http.ResponseWriter, r *http.Request) {
 	tokenString, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.StandardClaims{
 		Subject:   user.ID,
 		ExpiresAt: expires.Unix(),
-	}).SignedString([]byte(jwtKey))
+	}).SignedString(jwtKey)
 	if err != nil {
 		respondError(w, err)
 		return
@@ -104,6 +106,7 @@ func maybeAuthUserID(next http.Handler) http.Handler {
 		p := jwt.Parser{ValidMethods: []string{jwt.SigningMethodHS256.Name}}
 		token, err := p.ParseWithClaims(tokenString, &jwt.StandardClaims{}, jwtKeyfunc)
 		if err != nil {
+			log.Println("error decoding token", err)
 			http.Error(w, http.StatusText(http.StatusUnauthorized),
 				http.StatusUnauthorized)
 			return

@@ -35,6 +35,7 @@ func main() {
 		jsonRequired := middleware.AllowContentType("application/json")
 		api.With(jsonRequired).Post("/login", login)
 		api.With(jsonRequired).Post("/users", createUser)
+		api.With(maybeAuthUserID).Get("/users/{username}", getUser)
 	})
 
 	// Server

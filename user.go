@@ -1,11 +1,13 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi"
 	"github.com/lib/pq"
 )
 
@@ -24,7 +26,6 @@ type User struct {
 
 // Profile model
 type Profile struct {
-	ID              string    `json:"id,omitempty"`
 	Email           string    `json:"email,omitempty"`
 	Username        string    `json:"username"`
 	AvatarURL       *string   `json:"avatarUrl"`
@@ -53,11 +54,8 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 	var user Profile
 	err := db.QueryRowContext(r.Context(), `
 		INSERT INTO users (email, username) VALUES ($1, $2)
-		RETURNING id, created_at
-	`, email, username).Scan(
-		&user.ID,
-		&user.CreatedAt,
-	)
+		RETURNING created_at
+	`, email, username).Scan(&user.CreatedAt)
 	if errPq, ok := err.(*pq.Error); ok && errPq.Code.Name() == "unique_violation" {
 		if strings.Contains(errPq.Error(), "users_email_key") {
 			respondJSON(w, map[string]string{
@@ -80,4 +78,50 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 	}
 	// Respond with the created user
 	respondJSON(w, user, http.StatusCreated)
+}
+
+func getUser(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	authUserID, authenticated := ctx.Value(keyAuthUserID).(string)
+	username := chi.URLParam(r, "username")
+
+	// Find user on the DB
+	var userID string
+	var user Profile
+	if err := db.QueryRowContext(ctx, `
+		SELECT
+			id, 
+			email,
+			username, 
+			avatar_url,
+			followers_count,
+			following_count,
+			created_at
+		FROM users
+		WHERE username = $1
+		`, username).Scan(
+		&userID,
+		&user.Email,
+		&user.Username,
+		&user.AvatarURL,
+		&user.FollowersCount,
+		&user.FollowingCount,
+		&user.CreatedAt,
+	); err == sql.ErrNoRows {
+		http.Error(w,
+			http.StatusText(http.StatusNotFound),
+			http.StatusNotFound)
+		return
+	} else if err != nil {
+		respondError(w, err)
+		return
+	}
+
+	// Hide details when the account isn't mine
+	if !authenticated || authUserID != userID {
+		user.Email = ""
+	}
+
+	// Respond with the found user profile
+	respondJSON(w, user, http.StatusOK)
 }
